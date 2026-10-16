@@ -1,3 +1,21 @@
+# LyricView Studio V8.2 — Animated album colors
+
+This release is based on **V8.1** (not V9) and keeps the fullscreen split album artwork, synced lyric glide/glow, Spotify features, and all existing design settings.
+
+## New: Apple Music-inspired animated gradient
+
+1. Open the normal customization sidebar and scroll to **Background**.
+2. Enable **Apple Music-style moving colors**.
+3. Connect Spotify and play a song. The background automatically reads dominant colors from each new album cover, smoothly fades between the old and new palettes, and drifts in overlapping, blurry waves.
+4. Use **Motion speed** and **Color intensity** to change the movement.
+5. Turn the toggle **off** to return to your previously selected static, blurred-artwork, custom-image, or solid background.
+
+The effect works both in the player preview and fullscreen, including the optional artwork-on-the-left fullscreen layout. Settings are saved in the browser. No server or paid image extraction API is required; image pixels are sampled locally in the browser. Some album cover servers may block reading pixels via CORS; in that case a fallback moving palette is shown instead.
+
+**Note:** This is a custom Apple Music-*inspired* fluid animation, not Apple's exact proprietary shader. The demo uses a rose/plum/blue palette until Spotify supplies real album art.
+
+---
+
 # LyricView Studio
 
 A customizable Apple Music-inspired lyrics visualizer with Spotify currently-playing integration.
@@ -92,3 +110,23 @@ If Spotify denies seeking (e.g., lack of playback permissions or no active devic
 - Fullscreen lyrics use a wider maximum content area (1240px rather than 900px), with responsive safe side gutters.
 - Very long lyrics and long unbroken words wrap within the safe text width instead of disappearing beyond the viewport. Left, right, center and alternating alignment are all supported.
 - The Spotify syncing, glow interpolation, fonts, sizing and saved settings are unchanged.
+
+
+## V8.1 — fullscreen artwork / title / artist option
+
+This update is based on **V8**, not the V9 redesign. In the Lyrics settings panel,
+under **Fullscreen artwork layout**, enable **Large artwork on the left**.
+
+- **Off (default):** Regular fullscreen looks exactly like V8.
+- **On:** Fullscreen shows the album art large on the left, with synchronized lyrics
+  on the right and the progress bar under the lyrics.
+- **Show song title** and **Show artist** are independent toggles, allowing you to
+  hide either text below the large cover. Both are on by default.
+- These three options are saved in the same browser as the existing settings.
+- The controls **only** change the fullscreen appearance. The normal editor
+  preview is unchanged, including its existing Show artwork checkbox.
+- The large cover uses Spotify's artwork for the playing track. Demo mode uses
+  a gradient placeholder if no artwork is provided.
+
+Choose **Fullscreen** at the top of the editor to use the optional split view.
+In Chromium and other desktop browsers you can press Esc to exit fullscreen.
