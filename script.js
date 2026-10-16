@@ -157,7 +157,7 @@ function drawAlbumMotion(now){
   motionCtx.fillStyle=veil;motionCtx.fillRect(0,0,w,h);
 }
 
-function apply(){const p=$('capture'),b=p.querySelector('.backdrop');p.style.setProperty('--blur',$('blur').value+'px');p.style.setProperty('--lyric-size',$('size').value+'px');p.style.setProperty('--inactive',Number($('opacity').value)/100);p.style.setProperty('--glow-enabled',$('glow').checked?'1':'0');$('blurValue').textContent=$('blur').value;$('sizeValue').textContent=$('size').value;$('offsetValue').textContent=Number($('offset').value).toFixed(1);$('lineDelayValue').textContent=Number($('lineDelay').value).toFixed(2);$('glideValue').textContent=Number($('glide').value).toFixed(1);$('volumeValue').textContent=$('volume').value+'%';$('motionSpeedValue').textContent=Number($('motionSpeed').value).toFixed(2).replace(/0$/,'').replace(/\.$/,'')+'×';$('motionIntensityValue').textContent=$('motionIntensity').value+'%';if(browserPlayer)browserPlayer.setVolume(Number($('volume').value)/100).catch(()=>{});$('lyrics').classList.remove('left','center','right','alternate');$('lyrics').classList.add($('align').value);$('lyrics').classList.toggle('has-sync',synced);$('lyrics').style.fontFamily=$('font').value==='serif'?'Georgia,serif':$('font').value==='mono'?'ui-monospace,monospace':'inherit';p.classList.toggle('art-hidden',!$('artwork').checked);document.body.classList.toggle('full-split',$('fullscreenArtwork').checked);document.body.classList.toggle('full-hide-title',!$('fullscreenTitle').checked);document.body.classList.toggle('full-hide-artist',!$('fullscreenArtist').checked);$('progressWrap').style.display=$('progressToggle').checked?'block':'none';requestAnimationFrame(()=>highlight(true));const mode=$('background').value;const gradient=`radial-gradient(circle at 25% 18%,${$('accent').value},transparent 55%),radial-gradient(circle at 85% 90%,#464185,${$('bgcolor').value} 75%)`;b.style.background=mode==='solid'?$('bgcolor').value:mode==='gradient'?gradient:mode==='image'&&customImage?`url("${customImage}") center/cover`:mode==='art'&&art?`url("${art}") center/cover`:gradient;updateAlbumMotion();if(document.body.classList.contains('full'))requestAnimationFrame(refreshFsPosition)}
+function apply(){const p=$('capture'),b=p.querySelector('.backdrop');p.style.setProperty('--blur',$('blur').value+'px');p.style.setProperty('--lyric-size',$('size').value+'px');p.style.setProperty('--inactive',Number($('opacity').value)/100);p.style.setProperty('--glow-enabled',$('glow').checked?'1':'0');$('blurValue').textContent=$('blur').value;$('sizeValue').textContent=$('size').value;$('offsetValue').textContent=Number($('offset').value).toFixed(1);$('lineDelayValue').textContent=Number($('lineDelay').value).toFixed(2);$('glideValue').textContent=Number($('glide').value).toFixed(1);$('volumeValue').textContent=$('volume').value+'%';$('motionSpeedValue').textContent=Number($('motionSpeed').value).toFixed(2).replace(/0$/,'').replace(/\.$/,'')+'×';$('motionIntensityValue').textContent=$('motionIntensity').value+'%';if(browserPlayer)browserPlayer.setVolume(Number($('volume').value)/100).catch(()=>{});$('lyrics').classList.remove('left','center','right','alternate');$('lyrics').classList.add($('align').value);$('lyrics').classList.toggle('has-sync',synced);$('lyrics').style.fontFamily=$('font').value==='serif'?'Georgia,serif':$('font').value==='mono'?'ui-monospace,monospace':'inherit';p.classList.toggle('art-hidden',!$('artwork').checked);document.body.classList.toggle('full-split',$('fullscreenArtwork').checked);document.body.classList.toggle('full-hide-title',!$('fullscreenTitle').checked);document.body.classList.toggle('full-hide-artist',!$('fullscreenArtist').checked);$('progressWrap').style.display=$('progressToggle').checked?'block':'none';requestAnimationFrame(()=>highlight(true));const mode=$('background').value;const gradient=`radial-gradient(circle at 25% 18%,${$('accent').value},transparent 55%),radial-gradient(circle at 85% 90%,#464185,${$('bgcolor').value} 75%)`;b.style.background=mode==='solid'?$('bgcolor').value:mode==='gradient'?gradient:mode==='image'&&customImage?`url("${customImage}") center/cover`:mode==='art'&&art?`url("${art}") center/cover`:gradient;updateAlbumMotion()}
 $('upload').onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{customImage=r.result;$('background').value='image';apply()};r.readAsDataURL(f)};
 for(const btn of document.querySelectorAll('[data-preset]'))btn.onclick=()=>{const presets={rose:['#e97b9e','#28182b','art'],ocean:['#4b9cfa','#10243d','gradient'],mono:['#eeeeee','#171717','solid'],gold:['#f5bb6d','#30201a','gradient']};const [a,b,c]=presets[btn.dataset.preset];$('accent').value=a;$('bgcolor').value=b;$('background').value=c;apply()};
 // Keep a monotonic local clock and gently correct minor Spotify polling jitter.
@@ -581,138 +581,7 @@ $('seekBar').addEventListener('keydown',e=>{
   seekTo(e.key==='Home'?0:e.key==='End'?duration:position+(e.key==='ArrowRight'?5:-5));
 });
 
-// V8.3 — Click the lyrics in fullscreen to reveal two glass arrow controls.
-// Drag the lyric viewport freely (mouse/touch/pen), or nudge left/right.
-// The lyric track is untouched, so timestamp-based vertical scrolling and glow
-// remain perfectly independent of this user-chosen viewport position.
-const fsLyrics=$('lyrics'), moveTools=$('lyricMoveTools');
-const moveArrowLeft=$('moveLyricsLeft'),moveArrowRight=$('moveLyricsRight');
-const fsPosition={
-  x: Number(localStorage.getItem('lv_fs_position_x'))||0,
-  y: Number(localStorage.getItem('lv_fs_position_y'))||0
-};
-let fsMoveTimeout=null,fsActivePointer=null,fsDragStart=null,fsDragging=false;
-const isFullscreenLyrics=()=>document.body.classList.contains('full');
-function setMoveControlsVisible(visible){
-  const show=visible&&isFullscreenLyrics();
-  moveTools.classList.toggle('is-visible',show);
-  moveTools.setAttribute('aria-hidden',show?'false':'true');
-  moveArrowLeft.tabIndex=show?0:-1;
-  moveArrowRight.tabIndex=show?0:-1;
-  if(!show && fsMoveTimeout){clearTimeout(fsMoveTimeout);fsMoveTimeout=null;}
-}
-function revealMoveControls(){
-  if(!isFullscreenLyrics())return;
-  setMoveControlsVisible(true);
-  if(fsMoveTimeout)clearTimeout(fsMoveTimeout);
-  // Fade away after two full seconds without a click, arrow press or drag.
-  fsMoveTimeout=setTimeout(()=>{fsMoveTimeout=null;if(!fsDragging)setMoveControlsVisible(false)},2000);
-}
-function placeMoveControls(){
-  if(!isFullscreenLyrics())return;
-  const bounds=$('capture').querySelector('.player-inner').getBoundingClientRect();
-  const box=fsLyrics.getBoundingClientRect();
-  const sidePadding=window.innerWidth<=620?20:30;
-  const btnSize=window.innerWidth<=620?43:56;
-  const min=btnSize/2+4;
-  const middleY=Math.max(min+6,Math.min(bounds.height-min-6,(box.top+box.height/2)-bounds.top));
-  // Arrows float just inside the lyric canvas, so they never intersect the
-  // soft-masked outer boundary or get clipped by the lyric viewport mask.
-  const left=Math.max(min,Math.min(bounds.width-min,box.left-bounds.left+sidePadding));
-  const right=Math.max(min,Math.min(bounds.width-min,box.right-bounds.left-sidePadding));
-  moveArrowLeft.style.left=left+'px';moveArrowLeft.style.top=middleY+'px';
-  moveArrowRight.style.left=right+'px';moveArrowRight.style.top=middleY+'px';
-  const tip=moveTools.querySelector('.lyric-move-tip');
-  tip.style.left=Math.max(40,Math.min(bounds.width-40,((box.left+box.right)/2)-bounds.left))+'px';
-  tip.style.top=Math.max(15,middleY-57)+'px';
-  tip.hidden=fsDragging;
-}
-function constrainFsPosition(x,y){
-  if(!isFullscreenLyrics())return {x,y};
-  // The measured rect already includes the previous CSS translate. Subtract it
-  // before clamping so repeated nudges do not drift the original anchor.
-  const rect=fsLyrics.getBoundingClientRect(),canvas=$('capture').getBoundingClientRect();
-  const originalLeft=rect.left-fsPosition.x, originalTop=rect.top-fsPosition.y;
-  const bleed=Math.min(30,Math.max(10,window.innerWidth*.014));
-  let leftEdge=canvas.left+bleed;
-  if(document.body.classList.contains('full-split')){
-    // Stay inside the right-hand lyric column when large album art is visible.
-    const footer=$('capture').querySelector('.footer').getBoundingClientRect();
-    leftEdge=Math.max(leftEdge,footer.left-Math.min(50,window.innerWidth*.035));
-  }
-  const rightEdge=canvas.right-bleed;
-  const minX=leftEdge-originalLeft,maxX=rightEdge-(originalLeft+rect.width);
-  const minY=canvas.top+bleed-originalTop,maxY=canvas.bottom-bleed-(originalTop+rect.height);
-  const clampTo=(value,min,max)=>min>max?(min+max)/2:Math.max(min,Math.min(max,value));
-  return {x:clampTo(x,minX,maxX),y:clampTo(y,minY,maxY)};
-}
-function updateFsPosition(x,y,{save=false}={}){
-  if(!isFullscreenLyrics())return;
-  const p=constrainFsPosition(x,y);
-  fsPosition.x=p.x;fsPosition.y=p.y;
-  fsLyrics.style.setProperty('--fs-lyrics-x',p.x.toFixed(1)+'px');
-  fsLyrics.style.setProperty('--fs-lyrics-y',p.y.toFixed(1)+'px');
-  if(save){localStorage.setItem('lv_fs_position_x',String(Math.round(p.x)));localStorage.setItem('lv_fs_position_y',String(Math.round(p.y)))}
-  // Arrow positions are updated after layout for seamless following during motion.
-  requestAnimationFrame(placeMoveControls);
-}
-function refreshFsPosition(){
-  if(!isFullscreenLyrics()){setMoveControlsVisible(false);return;}
-  requestAnimationFrame(()=>updateFsPosition(fsPosition.x,fsPosition.y));
-}
-fsLyrics.addEventListener('pointerdown',event=>{
-  if(!isFullscreenLyrics()||event.button!==0||fsActivePointer!==null)return;
-  revealMoveControls();
-  fsActivePointer=event.pointerId;fsDragging=false;
-  fsDragStart={x:event.clientX,y:event.clientY,offsetX:fsPosition.x,offsetY:fsPosition.y};
-  fsLyrics.setPointerCapture(event.pointerId);
-});
-fsLyrics.addEventListener('pointermove',event=>{
-  if(event.pointerId!==fsActivePointer||!fsDragStart)return;
-  const dx=event.clientX-fsDragStart.x,dy=event.clientY-fsDragStart.y;
-  if(!fsDragging && Math.hypot(dx,dy)<5)return;
-  if(!fsDragging){fsDragging=true;fsLyrics.classList.add('fs-dragging');}
-  updateFsPosition(fsDragStart.offsetX+dx,fsDragStart.offsetY+dy);
-  revealMoveControls();
-});
-function finishFsDrag(event){
-  if(fsActivePointer!==event.pointerId)return;
-  if(fsLyrics.hasPointerCapture(event.pointerId))fsLyrics.releasePointerCapture(event.pointerId);
-  if(fsDragging)updateFsPosition(fsPosition.x,fsPosition.y,{save:true});
-  fsDragging=false;fsActivePointer=null;fsDragStart=null;
-  fsLyrics.classList.remove('fs-dragging');
-  revealMoveControls();
-}
-fsLyrics.addEventListener('pointerup',finishFsDrag);
-fsLyrics.addEventListener('pointercancel',finishFsDrag);
-// Glass arrows nudge the lyric canvas without ever seeking or advancing music.
-function nudgeFsLyrics(direction){
-  if(!isFullscreenLyrics())return;
-  updateFsPosition(fsPosition.x+direction*(window.innerWidth<620?34:62),fsPosition.y,{save:true});
-  revealMoveControls();
-}
-moveArrowLeft.addEventListener('click',e=>{e.stopPropagation();nudgeFsLyrics(-1)});
-moveArrowRight.addEventListener('click',e=>{e.stopPropagation();nudgeFsLyrics(1)});
-moveTools.addEventListener('pointerdown',e=>e.stopPropagation());
-fsLyrics.addEventListener('keydown',e=>{
-  if(!isFullscreenLyrics())return;
-  const movements={ArrowLeft:[-24,0],ArrowRight:[24,0],ArrowUp:[0,-24],ArrowDown:[0,24]};
-  if(e.key==='Home'){
-    e.preventDefault();updateFsPosition(0,0,{save:true});revealMoveControls();return;
-  }
-  const step=movements[e.key];if(!step)return;
-  e.preventDefault();updateFsPosition(fsPosition.x+step[0],fsPosition.y+step[1],{save:true});revealMoveControls();
-});
-$('capture').addEventListener('pointerdown',e=>{
-  if(!isFullscreenLyrics())return;
-  if(!fsLyrics.contains(e.target)&&!moveTools.contains(e.target))setMoveControlsVisible(false);
-});
-window.addEventListener('resize',refreshFsPosition);
-// Also refresh when the fullscreen split layout is changed while active.
-for(const id of ['fullscreenArtwork','fullscreenTitle','fullscreenArtist'])
-  $(id).addEventListener('change',()=>setTimeout(refreshFsPosition,60));
-
-$('full').onclick=()=>{document.body.classList.toggle('full');if(document.body.classList.contains('full')){$('capture').requestFullscreen?.().catch(()=>{});}else if(document.fullscreenElement)document.exitFullscreen();refreshFsPosition()};document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement)document.body.classList.remove('full');refreshFsPosition()});
+$('full').onclick=()=>{document.body.classList.toggle('full');if(document.body.classList.contains('full'))$('capture').requestFullscreen?.().catch(()=>{});else if(document.fullscreenElement)document.exitFullscreen()};document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement)document.body.classList.remove('full')});
 $('reset').onclick=()=>{settings.filter(x=>x!=='client').forEach(x=>localStorage.removeItem('lv_'+x));location.reload()};
 $('shot').onclick=async()=>{try{const mod=await import('https://cdn.jsdelivr.net/npm/html-to-image@1.11.11/+esm');const data=await mod.toPng($('capture'),{pixelRatio:2,cacheBust:true});const a=document.createElement('a');a.href=data;a.download='lyricview.png';a.click()}catch{alert('Screenshot export failed. Some external album covers block browser image export. Try a custom background or a browser screenshot.')}};
 apply();setDemo();initialize();requestAnimationFrame(frame);setInterval(()=>{if(access)poll()},5000);

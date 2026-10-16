@@ -1,18 +1,3 @@
-# LyricView Studio V8.3 — Fullscreen lyric positioning
-
-## New in V8.3
-
-When fullscreen is open, **click or tap anywhere in the lyric area** to reveal two soft, frosted-glass arrows. Use **left/right arrows** to nudge lyrics horizontally, or **drag the lyrics** using a mouse or touch to position them in both directions. The controls fade away after **2 seconds without interaction**; touching or pressing an arrow restarts that countdown.
-
-- Only works in fullscreen; the standard V8.2 player stays unchanged.
-- The arrows sit on a separate overlay outside the lyric mask, so they remain visible without cropping the glow.
-- The lyric glide, active-line glow, Spotify sync, and animated album background are unaffected.
-- Position is saved in this browser and kept when returning to fullscreen.
-- For keyboard use, focus the lyric area then press arrow keys to move it; press Home to recenter.
-- The lyric box is constrained within the screen (and within the right-side lyrics area of the split-artwork layout).
-
----
-
 # LyricView Studio V8.2 — Animated album colors
 
 This release is based on **V8.1** (not V9) and keeps the fullscreen split album artwork, synced lyric glide/glow, Spotify features, and all existing design settings.
