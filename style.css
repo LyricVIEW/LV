@@ -289,9 +289,8 @@ body.full.full-split .line {
 }
 
 
-/* V8.2 — album-reactive Apple Music-inspired moving gradient.
-   Important: the canvas lives BELOW the original lyric layout and does not
-   change lyrics, glow, scrolling, fullscreen splits or the existing presets. */
+/* V8.2.1 — luminous four-tone moving liquid glass. The canvas fits the
+   player bounds exactly, so fullscreen and split-layout keep the same effect. */
 .animated-options{border:1px solid #ffffff22;border-radius:13px;background:linear-gradient(145deg,#272132aa,#17182677);padding:10px 13px;margin-top:18px}
 .animated-options label{margin:8px 0 15px}
 .animated-options label:last-of-type{margin-bottom:8px}
@@ -299,10 +298,17 @@ body.full.full-split .line {
 .animated-switch input{float:right;accent-color:#ef7c9c;transform:scale(1.2)}
 .animated-switch .hint{display:block;font-weight:400;margin:8px 0 2px;clear:both}
 .animated-options .hint{margin:7px 0 1px}
-.album-canvas{position:absolute;inset:-9%;height:118%;width:118%;z-index:0;pointer-events:none;display:block;opacity:0;transform:scale(1.035);filter:blur(36px) saturate(1.35);transition:opacity 1.4s ease;will-change:opacity}
+.album-swatches{display:flex;align-items:center;gap:7px;margin:10px 0 14px}
+.album-swatch{display:block;flex:1;height:26px;border-radius:8px;border:1px solid #ffffff4a;box-shadow:inset 0 1px 0 #ffffff3e,0 3px 13px #0005;transition:background 2.5s ease}
+.album-swatch:nth-child(1){background:#e56093}.album-swatch:nth-child(2){background:#574da8}.album-swatch:nth-child(3){background:#28a4bc}.album-swatch:nth-child(4){background:#de7d6d}
+.swatch-heading{font-size:10px;letter-spacing:1.6px;color:#b5b3c9;font-weight:700}
+.album-canvas,.glass-canvas{position:absolute;inset:0;width:100%;height:100%;z-index:0;pointer-events:none;display:block;opacity:0;transition:opacity 1.9s ease;will-change:opacity}
+.album-canvas{filter:saturate(1.17) blur(13px);transform:scale(1.055)}
+.glass-canvas{z-index:0;filter:blur(6px);mix-blend-mode:screen}
 .player.motion-active .album-canvas{opacity:1}
+.player.motion-active .glass-canvas{opacity:.95}
 .player.motion-active .backdrop{opacity:0}
-.backdrop{transition:opacity 1.4s ease}
-.player.motion-active .wash{background:linear-gradient(180deg,rgba(3,2,9,.22),rgba(4,2,10,.16) 46%,rgba(4,2,10,.42)),radial-gradient(ellipse at 50% 55%,transparent 36%,#07040b40 100%)}
-.player .wash{transition:background 1.1s ease;pointer-events:none}
-@media(prefers-reduced-motion:reduce){.album-canvas{transition:none;filter:blur(42px) saturate(1.2)}}
+.backdrop{transition:opacity 1.8s ease}
+.player.motion-active .wash{background:linear-gradient(180deg,rgba(3,2,9,.14),rgba(4,2,10,.025) 48%,rgba(4,2,10,.20)),radial-gradient(ellipse at 50% 55%,transparent 55%,#08061231 100%)}
+.player .wash{transition:background 1.8s ease;pointer-events:none}
+@media(prefers-reduced-motion:reduce){.album-canvas,.glass-canvas{transition:none}}
