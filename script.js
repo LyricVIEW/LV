@@ -5,259 +5,159 @@ let synced=true;
 let browserPlayer=null,browserDevice='',grantedScopes='',sdkPromise=null,browserStarting=false;
 let pendingSeek=null,lastBrowserSeek=0,lastAutoRestartedTrack=null;
 let lines=demoLines,trackId='demo',position=0,duration=192,playing=true,lastTick=performance.now(),access='',refresh='',expires=0,fetching=false,art='',customImage='',demo=true;
-const settings=['client','background','accent','bgcolor','blur','font','size','align','opacity','glow','artwork','progressToggle','offset','lineDelay','glide','volume','beginning','fullscreenArtwork','fullscreenTitle','fullscreenArtist','albumMotion','motionSpeed','motionIntensity','colorSeparation','glassDepth'];
+const settings=['client','background','accent','bgcolor','blur','font','size','align','opacity','glow','artwork','progressToggle','offset','lineDelay','glide','volume','beginning','fullscreenArtwork','fullscreenTitle','fullscreenArtist','albumMotion','motionSpeed','motionIntensity'];
 for(const id of settings){const el=$(id);const saved=localStorage.getItem('lv_'+id);if(saved!==null){if(el.type==='checkbox')el.checked=saved==='true';else el.value=saved}el.addEventListener('input',()=>{localStorage.setItem('lv_'+id,el.type==='checkbox'?el.checked:el.value);apply()})}
-// V8.2.1 — true four-color album sampling + moving, glassy depth.
-// Pixels are read only from CORS-accessible artwork. Four dominant groups are
-// selected by area occupied; perceptual separation prevents near-duplicates.
-// A monochrome cover produces four authentic tonal variants rather than
-// inventing unrelated hues. Everything is rendered locally in Canvas 2D.
+// V8.2: album-cover-driven fluid gradients, inspired by Apple Music's softly moving colors.
+// No external libraries, no music data harvesting. Album pixels are analyzed locally.
+// This is original code designed to approximate the aesthetic, not Apple's proprietary shader.
 const motionCanvas=$('albumCanvas'),motionCtx=motionCanvas.getContext('2d',{alpha:false});
-const glassCanvas=$('glassCanvas'),glassCtx=glassCanvas.getContext('2d');
-const motionBase=[[229,96,147],[87,77,168],[40,164,188],[222,125,109],[26,16,42]];
+const motionBase=[[182,83,123],[93,47,105],[60,81,142],[126,74,108],[39,26,66]];
 let motionPalette=motionBase.map(c=>c.slice()),motionStartPalette=motionBase.map(c=>c.slice()),motionTargetPalette=motionBase.map(c=>c.slice());
 let motionBlendStarted=performance.now(),motionSource='',motionRequest=0,motionLastFrame=0,motionTime=0,motionWasRunning=false;
-let albumSwatchProportions=[30,25,24,21];
 const colorClamp=(v,min=0,max=255)=>Math.max(min,Math.min(max,v));
 const mixColor=(a,b,k)=>a.map((v,i)=>v+(b[i]-v)*k);
 const rgb=(c,a=1)=>`rgba(${Math.round(c[0])},${Math.round(c[1])},${Math.round(c[2])},${a})`;
 const luma=c=>(c[0]*.2126+c[1]*.7152+c[2]*.0722)/255;
-const clampUnit=x=>Math.max(0,Math.min(1,x));
 function hueOf(c){const r=c[0]/255,g=c[1]/255,b=c[2]/255,hi=Math.max(r,g,b),lo=Math.min(r,g,b),diff=hi-lo;if(!diff)return 0;let h=hi===r?((g-b)/diff)%6:hi===g?(b-r)/diff+2:(r-g)/diff+4;return ((h*60)%360+360)%360;}
-function vividness(c){return (Math.max(...c)-Math.min(...c))/255;}
-function oklab(c){
-  const rgbLin=c.map(v=>{v/=255;return v<=.04045?v/12.92:((v+.055)/1.055)**2.4});
-  const L=Math.cbrt(.4122214708*rgbLin[0]+.5363325363*rgbLin[1]+.0514459929*rgbLin[2]);
-  const M=Math.cbrt(.2119034982*rgbLin[0]+.6806995451*rgbLin[1]+.1073969566*rgbLin[2]);
-  const S=Math.cbrt(.0883024619*rgbLin[0]+.2817188376*rgbLin[1]+.6299787005*rgbLin[2]);
-  return [.2104542553*L+.793617785*M-.0040720468*S,1.9779984951*L-2.428592205*M+.4505937099*S,.0259040371*L+.7827717662*M-.808675766*S];
-}
-function perceptualGap(a,b){const A=oklab(a),B=oklab(b);return Math.hypot((A[0]-B[0])*1.1,(A[1]-B[1])*1.55,(A[2]-B[2])*1.55);}
-function brightenAlbumColor(c,contrast=1){
-  // Lift deep-colored highlights without bleaching each distinct hue.
-  const max=Math.max(...c),min=Math.min(...c),mid=(max+min)/2;
-  const separation=Number($('colorSeparation').value)/100;
-  let target=mid<56?Math.max(69,mid*1.5):mid>202?Math.min(201,mid):mid;
-  target=mid+(target-mid)*(.45+separation*.58);
-  const lift=target-mid;
-  const saturate=1.08+separation*.45;
-  return c.map(v=>colorClamp(Math.round((mid+(v-mid)*saturate+lift)*contrast)));
-}
-function refreshSwatches(palette=motionTargetPalette){
-  const host=$('albumSwatches');if(!host)return;
-  host.querySelectorAll('.album-swatch').forEach((sw,i)=>{
-    sw.style.background=rgb(palette[i]);
-    const percent=albumSwatchProportions[i];
-    sw.title=`Dominant color ${i+1}${percent?` · ~${percent}% of sampled cover pixels`:''}`;
-    sw.setAttribute('aria-label',sw.title);
-  });
-}
+function colorDistance(a,b){const hue=Math.abs(hueOf(a)-hueOf(b));const h=Math.min(hue,360-hue)/180;return h*.65+Math.abs(luma(a)-luma(b))*.35}
+function amplify(c,mult=1){let avg=(c[0]+c[1]+c[2])/3;let result=c.map(v=>colorClamp((avg+(v-avg)*1.28)*mult));return result}
 function albumColorPalette(img){
-  const size=96,s=document.createElement('canvas');s.width=s.height=size;
-  const c=s.getContext('2d',{willReadFrequently:true});
-  c.drawImage(img,0,0,size,size);
-  const data=c.getImageData(0,0,size,size).data;
-  const hist=new Map();let counted=0;
-  // Quantize colors by RGB cells: bucket weight is pure pixel frequency.
-  // No saturation multiplier: the most-used cover colors really win.
-  for(let p=0;p<data.length;p+=8){
-    if(data[p+3]<160)continue;
-    const R=data[p],G=data[p+1],B=data[p+2];
-    const key=`${R>>4},${G>>4},${B>>4}`;
-    const entry=hist.get(key)||{sum:[0,0,0],count:0};
-    entry.sum[0]+=R;entry.sum[1]+=G;entry.sum[2]+=B;entry.count++;
-    hist.set(key,entry);counted++;
+  const s=document.createElement('canvas');s.width=s.height=60;
+  const c=s.getContext('2d',{willReadFrequently:true});c.drawImage(img,0,0,60,60);
+  const {data}=c.getImageData(0,0,60,60);
+  const buckets=new Map();
+  for(let y=1;y<59;y+=2)for(let x=1;x<59;x+=2){
+    const i=(y*60+x)*4;if(data[i+3]<185)continue;
+    const col=[data[i],data[i+1],data[i+2]];
+    const bright=luma(col),spread=Math.max(...col)-Math.min(...col);
+    if(bright<.065||bright>.93)continue;
+    const sat=spread/255;
+    const key=`${Math.round(hueOf(col)/22)%16}-${Math.floor(bright*5)}-${sat<.17?0:1}`;
+    const weight=(.25+sat*2.9)*(bright>.16&&bright<.82?1:.45);
+    const old=buckets.get(key)||{color:[0,0,0],weight:0,count:0};
+    for(let j=0;j<3;j++)old.color[j]+=col[j]*weight;
+    old.weight+=weight;old.count++;buckets.set(key,old);
   }
-  if(!counted)return motionBase.map(c=>c.slice());
-  const buckets=[...hist.values()].map(e=>({color:e.sum.map(v=>v/e.count),count:e.count})).sort((a,b)=>b.count-a.count);
-  // Group nearby quantized shades around popular seed colors. Pick additional
-  // seeds with both substantial area and perceptual distance from earlier picks.
-  let seeds=[buckets[0].color];
-  const spread=Number($('colorSeparation').value)/100;
-  for(let i=1;i<4;i++){
-    let best=null,bestScore=-1;
-    for(const item of buckets){
-      const d=Math.min(...seeds.map(seed=>perceptualGap(item.color,seed)));
-      const score=Math.sqrt(item.count)*Math.pow(Math.max(0,d),.65+spread*.8);
-      if(score>bestScore){best=item;bestScore=score}
-    }
-    seeds.push(best?best.color:seeds[0]);
-  }
-  // A few lightweight, popularity-weighted cluster passes: means reflect the
-  // cover's actual pixels; the biggest cluster gets the dominant placement.
-  let groups=[];
-  for(let iter=0;iter<5;iter++){
-    groups=seeds.map(()=>({sum:[0,0,0],count:0}));
-    for(const item of buckets){
-      let k=0,nearest=Infinity;
-      for(let i=0;i<seeds.length;i++){
-        const d=perceptualGap(item.color,seeds[i]);if(d<nearest){nearest=d;k=i}
-      }
-      const g=groups[k];g.count+=item.count;
-      for(let ch=0;ch<3;ch++)g.sum[ch]+=item.color[ch]*item.count;
-    }
-    seeds=groups.map((g,i)=>g.count?g.sum.map(v=>v/g.count):seeds[i]);
-  }
-  let ranked=seeds.map((color,i)=>({color,count:groups[i].count})).sort((a,b)=>b.count-a.count);
-  // Avoid visual duplicates only when the cover has other actual colors with
-  // meaningful frequency; otherwise keep genuine dominant tonal colors.
-  for(let i=1;i<ranked.length;i++){
-    const d=Math.min(...ranked.slice(0,i).map(x=>perceptualGap(x.color,ranked[i].color)));
-    if(d<(.075+spread*.055)){
-      const alternative=buckets.find(item=>
-        item.count>=Math.max(2,ranked[i].count*.035)&&
-        ranked.slice(0,i).every(x=>perceptualGap(item.color,x.color)>.12));
-      if(alternative)ranked[i]={color:alternative.color,count:ranked[i].count};
-    }
-  }
-  albumSwatchProportions=ranked.map(x=>Math.round(100*x.count/counted));
-  const colors=ranked.map((x,i)=>brightenAlbumColor(x.color,i===0?1.1:1.08));
-  const shade=ranked[0].color.map(v=>colorClamp(v*.13+5,5,40));
-  return [...colors,shade];
+  const choices=[...buckets.values()].map(b=>({color:b.color.map(v=>v/b.weight),score:b.weight})).sort((a,b)=>b.score-a.score);
+  if(!choices.length)return motionBase.map(c=>c.slice());
+  const vivid=choices.filter(x=>Math.max(...x.color)-Math.min(...x.color)>22);
+  const candidates=vivid.length?vivid:choices;
+  const chosen=[];
+  for(const entry of candidates){if(chosen.every(other=>colorDistance(other,entry.color)>.17)){chosen.push(entry.color);if(chosen.length>=4)break}}
+  if(!chosen.length)chosen.push(candidates[0].color);
+  const neutral=vivid.length===0;
+  const primary=amplify(chosen[0],1.12);
+  const secondary=amplify(chosen[1]||chosen[0].map((n,i)=>n*(i===0?.82:i===2?1.28:.95)),.98);
+  const tertiary=amplify(chosen[2]||chosen[1]||[primary[2],primary[0],primary[1]],.87);
+  const fourth=amplify(chosen[3]||chosen[0],.68);
+  const darkness=chosen[0].map(v=>colorClamp(v*(neutral?.23:.2),7,58));
+  return [primary,secondary,tertiary,fourth,darkness];
 }
 function currentMotionPalette(now=performance.now()){
-  const t=clampUnit((now-motionBlendStarted)/3400),ease=t*t*(3-2*t);
-  return motionStartPalette.map((c,i)=>mixColor(c,motionTargetPalette[i],ease));
+  const elapsed=now-motionBlendStarted;
+  const t=clamp01(elapsed/2600);const eased=t*t*(3-2*t);
+  return motionStartPalette.map((c,i)=>mixColor(c,motionTargetPalette[i],eased));
 }
 function transitionPalette(next){
-  motionStartPalette=currentMotionPalette();motionTargetPalette=next.map(c=>c.slice());motionBlendStarted=performance.now();refreshSwatches(next);
+  motionStartPalette=currentMotionPalette();
+  motionTargetPalette=next.map(c=>c.slice());
+  motionBlendStarted=performance.now();
 }
 function setAlbumPalette(url){
   const key=url||'demo';if(key===motionSource)return;motionSource=key;
-  if(!url){albumSwatchProportions=[30,25,24,21];transitionPalette(motionBase);$('paletteStatus').textContent='Demo palette · four contrasting liquid colors.';return;}
-  $('paletteStatus').textContent='Finding the four most-used colors in this cover…';
+  if(!url){transitionPalette(motionBase);$('paletteStatus').textContent='Demo: animated rose, plum and blue colors.';return;}
+  $('paletteStatus').textContent='Reading this album cover’s colors…';
   const image=new Image();image.crossOrigin='anonymous';
   image.onload=()=>{
     if(motionSource!==key)return;
-    try{transitionPalette(albumColorPalette(image));$('paletteStatus').textContent='Four dominant album colors · blended as moving glass.';}
-    catch(err){fallbackPalette(key);$('paletteStatus').textContent='Artwork blocks color sampling · album-specific fallback palette.';}
+    try{transitionPalette(albumColorPalette(image));$('paletteStatus').textContent='Colors extracted from the current album cover.';}
+    catch(err){
+      // Some image hosts block pixel reads. Preserve animation with a
+      // deterministic album-specific color palette (no proxy / CORS bypass).
+      fallbackPalette(key);
+      $('paletteStatus').textContent='Cover color access blocked; using an animated fallback palette.';
+    }
   };
-  image.onerror=()=>{if(motionSource!==key)return;fallbackPalette(key);$('paletteStatus').textContent='Artwork unavailable · moving fallback palette.';};
+  image.onerror=()=>{if(motionSource!==key)return;fallbackPalette(key);$('paletteStatus').textContent='Cover unavailable; using a moving fallback palette.';};
   image.src=url;
 }
 function fallbackPalette(seed){
   let hash=2166136261;for(let i=0;i<seed.length;i++)hash=Math.imul(hash^seed.charCodeAt(i),16777619);
-  const n=(hash>>>0)%360;
-  const hsl=(h,s,l)=>{const a=s*Math.min(l,1-l),f=k=>{const q=(k+h/30)%12;return Math.round(255*(l-a*Math.max(-1,Math.min(q-3,9-q,1))))};return [f(0),f(8),f(4)]};
-  albumSwatchProportions=[0,0,0,0];
-  transitionPalette([hsl(n,.74,.55),hsl((n+75)%360,.77,.51),hsl((n+205)%360,.68,.49),hsl((n+300)%360,.72,.53),hsl(n,.3,.09)]);
+  let n=Math.abs(hash)%360;
+  const hue=(h,s,l)=>{const a=s*Math.min(l,1-l),f=k=>{let q=(k+h/30)%12;return Math.round(255*(l-a*Math.max(-1,Math.min(q-3,9-q,1))))};return [f(0),f(8),f(4)]};
+  transitionPalette([hue(n,.55,.47),hue((n+45)%360,.56,.36),hue((n+292)%360,.45,.40),hue((n+125)%360,.42,.27),hue(n,.35,.11)]);
 }
 function updateAlbumMotion(){
+  if(!motionCanvas)return;
   const enabled=$('albumMotion').checked;
   $('capture').classList.toggle('motion-active',enabled);
   if(!enabled){$('paletteStatus').textContent='Animated colors are off.';if(motionRequest){cancelAnimationFrame(motionRequest);motionRequest=0;}motionWasRunning=false;return}
-  if(motionSource==='demo')$('paletteStatus').textContent='Demo palette · four contrasting liquid colors.';
-  else if(motionSource)$('paletteStatus').textContent='Four moving album colors with liquid glass highlights.';
+  if(motionSource==='demo')$('paletteStatus').textContent='Demo: animated rose, plum and blue colors.';
+  else if(motionSource) $('paletteStatus').textContent='Moving colors from the current album.';
   motionLastFrame=0;
   if(!motionWasRunning){motionWasRunning=true;motionRequest=requestAnimationFrame(drawAlbumMotion)}
 }
 function resizeMotionCanvas(){
-  const rect=$('capture').getBoundingClientRect();if(!rect.width||!rect.height)return false;
-  const ratio=Math.min(1,650/Math.max(rect.width,rect.height));
-  const w=Math.round(rect.width*ratio),h=Math.round(rect.height*ratio);
-  for(const canvas of [motionCanvas,glassCanvas]){
-    if(canvas.width!==w)canvas.width=w;
-    if(canvas.height!==h)canvas.height=h;
-  }
+  // A low-resolution canvas is enough for a diffused gradient and keeps even
+  // fullscreen playback efficient. It is scaled and blurred by CSS.
+  const rect=motionCanvas.getBoundingClientRect();
+  if(!rect.width||!rect.height)return false;
+  const w=Math.min(800,Math.max(170,Math.round(rect.width*.45)));
+  const h=Math.min(570,Math.max(170,Math.round(rect.height*.45)));
+  if(motionCanvas.width!==w)motionCanvas.width=w;
+  if(motionCanvas.height!==h)motionCanvas.height=h;
   return true;
 }
 const motionObserver=new ResizeObserver(()=>{if($('albumMotion').checked)resizeMotionCanvas()});
 motionObserver.observe($('capture'));
-function paintGlassHighlights(w,h,t,intensity,palette){
-  const ctx=glassCtx;ctx.clearRect(0,0,w,h);
-  const depth=Number($('glassDepth').value)/100;
-  if(depth<.015)return;
-  const unit=Math.min(w,h);
-  // Translucent overlapping curved light-catches. No hard lines or mirror-like
-  // geometric patches: the soft specular rims resemble curved liquid glass.
-  ctx.save();ctx.globalCompositeOperation='screen';
-  for(let i=0;i<5;i++){
-    const phase=t*(.055+.009*i)+i*2.07;
-    const x=w*(.49+Math.sin(phase+1)*.44),y=h*(.5+Math.cos(phase*.83+i)*.42);
-    const rx=unit*(.35+(i%3)*.12),ry=unit*(.24+(i%2)*.12);
-    const alpha=(.045+i%3*.02)*depth*(.55+intensity*.8);
-    ctx.save();ctx.translate(x,y);ctx.rotate(Math.sin(phase*.6)*.34);
-    ctx.scale(rx,ry);
-    const glass=ctx.createRadialGradient(-.25,-.31,.04,0,0,1);
-    glass.addColorStop(0,`rgba(255,255,255,${alpha*1.6})`);
-    glass.addColorStop(.25,`rgba(255,255,255,${alpha*.55})`);
-    glass.addColorStop(.59,`rgba(255,255,255,${alpha*.05})`);
-    glass.addColorStop(.83,`rgba(255,255,255,${alpha*.16})`);
-    glass.addColorStop(1,'rgba(255,255,255,0)');
-    ctx.fillStyle=glass;ctx.beginPath();ctx.arc(0,0,1,0,Math.PI*2);ctx.fill();
-    // A curved, low-opacity rim catches the light like a thick glass surface.
-    const rim=ctx.createLinearGradient(-1,-1,1,1);
-    rim.addColorStop(0,`rgba(255,255,255,${.22*depth})`);
-    rim.addColorStop(.31,`rgba(255,255,255,${.085*depth})`);
-    rim.addColorStop(.72,`rgba(255,255,255,${.015*depth})`);
-    rim.addColorStop(1,`rgba(255,255,255,${.12*depth})`);
-    ctx.strokeStyle=rim;ctx.lineWidth=.027;
-    ctx.beginPath();ctx.ellipse(0,0,.91,.91,0,Math.PI*.91,Math.PI*1.94);ctx.stroke();
-    ctx.restore();
-  }
-  ctx.restore();
-  // A wide reflective sheen travels slowly across the colored background.
-  const sweep=(Math.sin(t*.11)*.38+.5)*w;
-  const shine=ctx.createLinearGradient(sweep-w*.6,0,sweep+w*.48,h);
-  shine.addColorStop(0,'rgba(255,255,255,0)');
-  shine.addColorStop(.45,`rgba(255,255,255,${.035*depth})`);
-  shine.addColorStop(.50,`rgba(255,255,255,${.083*depth})`);
-  shine.addColorStop(.59,`rgba(255,255,255,${.013*depth})`);
-  shine.addColorStop(1,'rgba(255,255,255,0)');
-  ctx.fillStyle=shine;ctx.fillRect(0,0,w,h);
-}
 function drawAlbumMotion(now){
-  motionRequest=0;if(!$('albumMotion').checked){motionWasRunning=false;return}
+  motionRequest=0;
+  if(!$('albumMotion').checked){motionWasRunning=false;return}
   motionRequest=requestAnimationFrame(drawAlbumMotion);
-  if(document.hidden||now-motionLastFrame<32)return;
+  if(document.hidden||now-motionLastFrame<32)return; // ~30fps; do not burn CPU in background tabs
   const dt=motionLastFrame?Math.min(.09,(now-motionLastFrame)/1000):0;
-  motionLastFrame=now;motionTime+=dt*Number($('motionSpeed').value||1);
+  motionLastFrame=now;
+  motionTime+=dt*Number($('motionSpeed').value||1);
   if(!resizeMotionCanvas())return;
-  const w=motionCanvas.width,h=motionCanvas.height,t=motionTime;
+  const w=motionCanvas.width,h=motionCanvas.height;
   const intensity=Number($('motionIntensity').value||70)/100;
-  const separation=Number($('colorSeparation').value)/100;
   const palette=currentMotionPalette(now);motionPalette=palette;
-  const base=palette[4];
-  const baseG=motionCtx.createLinearGradient(0,0,w,h);
-  baseG.addColorStop(0,rgb(mixColor(base,palette[0],.15)));
-  baseG.addColorStop(.5,rgb(mixColor(base,palette[2],.14)));
-  baseG.addColorStop(1,rgb(mixColor(base,palette[1],.2)));
-  motionCtx.fillStyle=baseG;motionCtx.fillRect(0,0,w,h);
-  // Four semi-independent swaths cross the frame. Foreground patches remain
-  // distinct while their edges softly flow together and never abruptly reset.
+  // Start with a very dark version of the album palette; the cover's lighter
+  // tones appear as broad, silk-soft fields that slowly rotate and overlap.
+  const shade=palette[4].map(v=>v*.48+4);
+  motionCtx.fillStyle=rgb(shade);motionCtx.fillRect(0,0,w,h);
+  const t=motionTime;
   const fields=[
-    {c:0,x:.14+Math.sin(t*.19+.1)*.21,y:.16+Math.cos(t*.14+.8)*.22,rx:.66,ry:.58,a:.96},
-    {c:1,x:.89+Math.sin(t*.15+2.3)*.17,y:.25+Math.cos(t*.16+1.1)*.25,rx:.63,ry:.66,a:.93},
-    {c:2,x:.22+Math.sin(t*.13+4.4)*.22,y:.86+Math.cos(t*.12+2.2)*.17,rx:.69,ry:.63,a:.91},
-    {c:3,x:.81+Math.sin(t*.18+2.6)*.20,y:.82+Math.cos(t*.14+3.8)*.17,rx:.64,ry:.60,a:.91},
-    {c:2,x:.52+Math.sin(t*.13+5.1)*.32,y:.44+Math.cos(t*.10+.8)*.32,rx:.46,ry:.48,a:.39},
-    {c:0,x:.54+Math.sin(t*.11+3.1)*.34,y:.58+Math.cos(t*.09+1.9)*.31,rx:.49,ry:.51,a:.34}
+    {c:0,x:.19+Math.sin(t*.17+.1)*.24,y:.22+Math.cos(t*.12+.7)*.23,r:.76,a:.72},
+    {c:1,x:.75+Math.sin(t*.135+2.3)*.21,y:.19+Math.cos(t*.18+1.1)*.28,r:.72,a:.73},
+    {c:2,x:.43+Math.sin(t*.11+4.4)*.35,y:.82+Math.cos(t*.145+2.2)*.22,r:.90,a:.55},
+    {c:3,x:.82+Math.sin(t*.21+2.6)*.25,y:.69+Math.cos(t*.125+3.8)*.24,r:.73,a:.56},
+    {c:0,x:.47+Math.sin(t*.125+5.1)*.34,y:.42+Math.cos(t*.10+.8)*.29,r:.52,a:.37}
   ];
   motionCtx.globalCompositeOperation='screen';
+  const unit=Math.max(w,h);
   for(const f of fields){
-    const x=f.x*w,y=f.y*h;
-    const R=Math.max(w*f.rx,h*f.ry);
-    const blur=motionCtx.createRadialGradient(x,y,R*.02,x,y,R);
-    const a=Math.min(.99,f.a*(.43+intensity*.59)*(.87+separation*.24));
-    blur.addColorStop(0,rgb(palette[f.c],a));
-    blur.addColorStop(.24,rgb(palette[f.c],a*.95));
-    blur.addColorStop(.47,rgb(palette[f.c],a*.75));
-    blur.addColorStop(.72,rgb(palette[f.c],a*.32));
-    blur.addColorStop(1,rgb(palette[f.c],0));
-    motionCtx.fillStyle=blur;motionCtx.fillRect(0,0,w,h);
+    const cx=f.x*w,cy=f.y*h,rad=f.r*unit;
+    const shade=palette[f.c];
+    const gradient=motionCtx.createRadialGradient(cx,cy,0,cx,cy,rad);
+    const a=f.a*(.28+intensity*.87);
+    gradient.addColorStop(0,rgb(shade,a));
+    gradient.addColorStop(.26,rgb(shade,a*.81));
+    gradient.addColorStop(.54,rgb(shade,a*.38));
+    gradient.addColorStop(1,rgb(shade,0));
+    motionCtx.fillStyle=gradient;motionCtx.fillRect(0,0,w,h);
   }
   motionCtx.globalCompositeOperation='source-over';
-  // Only a very slight black tint so the four source colors stay visible.
+  // Gentle dark veil for legibility; a slow breathing effect avoids static gradients.
+  const pulse=.08+.04*Math.sin(t*.5);
   const veil=motionCtx.createLinearGradient(0,0,w,h);
-  veil.addColorStop(0,'rgba(7,5,13,.10)');
-  veil.addColorStop(.48,'rgba(5,3,11,.035)');
-  veil.addColorStop(1,'rgba(4,3,9,.13)');
+  veil.addColorStop(0,`rgba(5,3,13,${.24+pulse})`);
+  veil.addColorStop(.54,`rgba(9,6,15,${.12+pulse})`);
+  veil.addColorStop(1,`rgba(2,2,9,${.24+pulse})`);
   motionCtx.fillStyle=veil;motionCtx.fillRect(0,0,w,h);
-  paintGlassHighlights(w,h,t,intensity,palette);
 }
 
-function apply(){const p=$('capture'),b=p.querySelector('.backdrop');p.style.setProperty('--blur',$('blur').value+'px');p.style.setProperty('--lyric-size',$('size').value+'px');p.style.setProperty('--inactive',Number($('opacity').value)/100);p.style.setProperty('--glow-enabled',$('glow').checked?'1':'0');$('blurValue').textContent=$('blur').value;$('sizeValue').textContent=$('size').value;$('offsetValue').textContent=Number($('offset').value).toFixed(1);$('lineDelayValue').textContent=Number($('lineDelay').value).toFixed(2);$('glideValue').textContent=Number($('glide').value).toFixed(1);$('volumeValue').textContent=$('volume').value+'%';$('motionSpeedValue').textContent=Number($('motionSpeed').value).toFixed(2).replace(/0$/,'').replace(/\.$/,'')+'×';$('motionIntensityValue').textContent=$('motionIntensity').value+'%';$('colorSeparationValue').textContent=$('colorSeparation').value+'%';$('glassDepthValue').textContent=$('glassDepth').value+'%';if(browserPlayer)browserPlayer.setVolume(Number($('volume').value)/100).catch(()=>{});$('lyrics').classList.remove('left','center','right','alternate');$('lyrics').classList.add($('align').value);$('lyrics').classList.toggle('has-sync',synced);$('lyrics').style.fontFamily=$('font').value==='serif'?'Georgia,serif':$('font').value==='mono'?'ui-monospace,monospace':'inherit';p.classList.toggle('art-hidden',!$('artwork').checked);document.body.classList.toggle('full-split',$('fullscreenArtwork').checked);document.body.classList.toggle('full-hide-title',!$('fullscreenTitle').checked);document.body.classList.toggle('full-hide-artist',!$('fullscreenArtist').checked);$('progressWrap').style.display=$('progressToggle').checked?'block':'none';requestAnimationFrame(()=>highlight(true));const mode=$('background').value;const gradient=`radial-gradient(circle at 25% 18%,${$('accent').value},transparent 55%),radial-gradient(circle at 85% 90%,#464185,${$('bgcolor').value} 75%)`;b.style.background=mode==='solid'?$('bgcolor').value:mode==='gradient'?gradient:mode==='image'&&customImage?`url("${customImage}") center/cover`:mode==='art'&&art?`url("${art}") center/cover`:gradient;updateAlbumMotion()}
-$('colorSeparation').addEventListener('change',()=>{const previous=motionSource;motionSource='';setAlbumPalette(previous==='demo'?'':previous)});
+function apply(){const p=$('capture'),b=p.querySelector('.backdrop');p.style.setProperty('--blur',$('blur').value+'px');p.style.setProperty('--lyric-size',$('size').value+'px');p.style.setProperty('--inactive',Number($('opacity').value)/100);p.style.setProperty('--glow-enabled',$('glow').checked?'1':'0');$('blurValue').textContent=$('blur').value;$('sizeValue').textContent=$('size').value;$('offsetValue').textContent=Number($('offset').value).toFixed(1);$('lineDelayValue').textContent=Number($('lineDelay').value).toFixed(2);$('glideValue').textContent=Number($('glide').value).toFixed(1);$('volumeValue').textContent=$('volume').value+'%';$('motionSpeedValue').textContent=Number($('motionSpeed').value).toFixed(2).replace(/0$/,'').replace(/\.$/,'')+'×';$('motionIntensityValue').textContent=$('motionIntensity').value+'%';if(browserPlayer)browserPlayer.setVolume(Number($('volume').value)/100).catch(()=>{});$('lyrics').classList.remove('left','center','right','alternate');$('lyrics').classList.add($('align').value);$('lyrics').classList.toggle('has-sync',synced);$('lyrics').style.fontFamily=$('font').value==='serif'?'Georgia,serif':$('font').value==='mono'?'ui-monospace,monospace':'inherit';p.classList.toggle('art-hidden',!$('artwork').checked);document.body.classList.toggle('full-split',$('fullscreenArtwork').checked);document.body.classList.toggle('full-hide-title',!$('fullscreenTitle').checked);document.body.classList.toggle('full-hide-artist',!$('fullscreenArtist').checked);$('progressWrap').style.display=$('progressToggle').checked?'block':'none';requestAnimationFrame(()=>highlight(true));const mode=$('background').value;const gradient=`radial-gradient(circle at 25% 18%,${$('accent').value},transparent 55%),radial-gradient(circle at 85% 90%,#464185,${$('bgcolor').value} 75%)`;b.style.background=mode==='solid'?$('bgcolor').value:mode==='gradient'?gradient:mode==='image'&&customImage?`url("${customImage}") center/cover`:mode==='art'&&art?`url("${art}") center/cover`:gradient;updateAlbumMotion()}
 $('upload').onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{customImage=r.result;$('background').value='image';apply()};r.readAsDataURL(f)};
 for(const btn of document.querySelectorAll('[data-preset]'))btn.onclick=()=>{const presets={rose:['#e97b9e','#28182b','art'],ocean:['#4b9cfa','#10243d','gradient'],mono:['#eeeeee','#171717','solid'],gold:['#f5bb6d','#30201a','gradient']};const [a,b,c]=presets[btn.dataset.preset];$('accent').value=a;$('bgcolor').value=b;$('background').value=c;apply()};
 // Keep a monotonic local clock and gently correct minor Spotify polling jitter.

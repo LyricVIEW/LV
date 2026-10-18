@@ -132,13 +132,6 @@ Choose **Fullscreen** at the top of the editor to use the optional split view.
 In Chromium and other desktop browsers you can press Esc to exit fullscreen.
 
 
-## V8.2.1 — richer album colors and liquid-glass gradients
+## Modern UI edition (visual-only)
 
-Based strictly on V8.2 (not V8.3 or V9). The existing visual layout, Spotify login, lyrics engine, fullscreen art, and controls are preserved.
-
-- **Four most-used cover colors:** analyzes album artwork pixels locally, quantizes and clusters colors by how many pixels they occupy, then selects four visually useful dominant groups. Swatches display those colors. Unicolor or monochrome artwork has limited real colors, so the visual effect varies their brightness without claiming other hues are present.
-- **Stronger color distinction:** four separately drifting color fields, fewer muddy dark overlays, and better chroma. Use **Color separation** to adjust how different the chosen dominant colors appear.
-- **Liquid glass depth:** translucent rolling light patches and soft specular reflections, controlled with a new slider. Slow motion remains controlled by **Motion speed**.
-- **Gradual song changes:** the color palette cross-fades over 3.4 seconds with no flash.
-- **Browser security:** some art hosts don't allow image pixel access (CORS). In that case, the page clearly labels its fallback colors instead of claiming they came from the album.
-- Includes two canvases rendered locally; reduced-motion preferences and off toggle remain supported.
+This edition is based on the original V8.2 release, not V8.2.1 or V8.3. The only changes are visual organization of the settings sidebar and a separate `studio-ui.css` stylesheet for the surrounding page. Original `style.css` and `script.js` are byte-for-byte unchanged, and the entire `#capture` player subtree is unchanged. Fullscreen presentation is deliberately not restyled. Keep all five files together when publishing to GitHub Pages.
